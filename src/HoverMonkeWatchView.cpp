@@ -5,13 +5,14 @@
 #include "beatsaber-hook/shared/utils/il2cpp-functions.hpp"
 #include "UnityEngine/Vector3.hpp"
 
-DEFINE_TYPE(HoverMonke::HoverMonkeWatchView);
+DEFINE_TYPE(HoverMonke, HoverMonkeWatchView);
 
 using namespace GorillaUI;
 using namespace UnityEngine;
 
 extern bool isRoom;
 extern void powerCheck();
+extern void carSpeedCheck();
 
 namespace HoverMonke
 {
@@ -20,11 +21,14 @@ namespace HoverMonke
         toggleHandler = new UIToggleInputHandler(EKeyboardKey::Enter, EKeyboardKey::Enter, true);
         settingSelector = new UISelectionHandler(EKeyboardKey::Up, EKeyboardKey::Down, EKeyboardKey::Enter, true, false);
         powerSelector = new UISelectionHandler(EKeyboardKey::Left, EKeyboardKey::Right, EKeyboardKey::Enter, false, true);
+        carSpeedSelector = new UISelectionHandler(EKeyboardKey::Left, EKeyboardKey::Right, EKeyboardKey::Enter, false, true);
 
-        settingSelector->max = 2;
+        settingSelector->max = 4;
         powerSelector->max = 5;
+        carSpeedSelector->max = 5;
 
         powerSelector->currentSelectionIndex = config.power;
+        carSpeedSelector->currentSelectionIndex = config.carSpeed;
     }
 
     void HoverMonkeWatchView::DidActivate(bool firstActivation)
@@ -37,6 +41,7 @@ namespace HoverMonke
     void HoverMonkeWatchView::OnEnter(int index)
     {
         if(index == 0) config.enabled ^= 1;
+        if(index == 1) config.carMode ^= 1;
     }
 
     void HoverMonkeWatchView::Redraw()
@@ -59,11 +64,39 @@ namespace HoverMonke
         text += settingSelector->currentSelectionIndex == 0 ? "<color=#fd0000>></color>" : " ";
         text += config.enabled ? "<color=#00ff00>Enabled</color>" : "<color=#ff0000>Disabled</color>";
 
+        text += "\n";
+        text += "<b><i>Car Mode:</i></b>\n";
+        text += settingSelector->currentSelectionIndex == 1 ? "<color=#fd0000>></color>" : " ";
+        text += config.carMode ? "<color=#00ff00>Enabled</color>" : "<color=#ff0000>Disabled</color>";
+
         text += "\n\n";
-        text += "<b><i>Speed:</i></b>\n";
-        text += settingSelector->currentSelectionIndex == 1 ? "<color=#ff0000><></color> " : " ";
+        text += "<b><i>Hover Speed:</i></b>\n";
+        text += settingSelector->currentSelectionIndex == 2 ? "<color=#ff0000><></color> " : " ";
         text += "<color=#AADDAA><></color> ";
         switch (powerSelector->currentSelectionIndex) {
+            case 0:
+                text += "Default";
+                break;
+            case 1:
+                text += "2";
+                break;
+            case 2:
+                text += "3";
+                break;
+            case 3:
+                text += "4";
+                break;
+            case 4:
+                text += "Maximum";
+                break;
+            default:
+                break;
+        }
+        text += "\n\n";
+        text += "<b><i>Car Acceleration:</i></b>\n";
+        text += settingSelector->currentSelectionIndex == 3 ? "<color=#ff0000><></color> " : " ";
+        text += "<color=#AADDAA><></color> ";
+        switch (carSpeedSelector->currentSelectionIndex) {
             case 0:
                 text += "Default";
                 break;
@@ -87,6 +120,7 @@ namespace HoverMonke
         {
             text += "\n\nBut is disabled\ndue to not being in\na private room\n";
         }
+        text += "\nMade by Buzz Bzzz bzz BZZZ The 18th#0431\nBLM\nQueer/Trans Pride";
     }
 
     void HoverMonkeWatchView::OnKeyPressed(int value)
@@ -99,13 +133,20 @@ namespace HoverMonke
                 case 0:
                     break;
                 case 1:
+                    break;
+                case 2:
                     powerSelector->HandleKey(key);
+                    break;
+                case 3:
+                    carSpeedSelector->HandleKey(key);
                     break;
                 default:
                     break;
             }
 
             config.power = powerSelector->currentSelectionIndex;
+            config.carSpeed = carSpeedSelector->currentSelectionIndex;
+            carSpeedCheck();
             powerCheck();
             SaveConfig();
         }

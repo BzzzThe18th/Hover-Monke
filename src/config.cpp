@@ -26,6 +26,8 @@ void SaveConfig()
     rapidjson::Document::AllocatorType& allocator = getConfig().config.GetAllocator();
 
     getConfig().config.AddMember("power", config.power, allocator);
+    getConfig().config.AddMember("carSpeed", config.carSpeed, allocator);
+    getConfig().config.AddMember("carMode", config.carMode, allocator);
     getConfig().config.AddMember("enabled", config.enabled, allocator);
     getConfig().Write();
     INFO("Saved Configuration!");
@@ -38,6 +40,16 @@ bool LoadConfig()
     rapidjson::Document& doc = getConfig().config;
     if (doc.HasMember("power")) {
         config.power = doc["power"].GetInt();
+    } else {
+        foundEverything = false;
+    }
+    if (doc.HasMember("carSpeed")) {
+        config.carSpeed = doc["carSpeed"].GetInt();
+    } else {
+        foundEverything = false;
+    }
+    if(doc.HasMember("carMode") && doc["carMode"].IsBool()) {
+        config.carMode = doc["carMode"].GetBool();
     } else {
         foundEverything = false;
     }

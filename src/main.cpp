@@ -8,8 +8,14 @@
 #include "beatsaber-hook/shared/utils/utils.h"
 #include "beatsaber-hook/shared/utils/il2cpp-utils-methods.hpp"
 #include "beatsaber-hook/shared/config/config-utils.hpp"
+#include "beatsaber-hook/shared/utils/hooking.hpp"
 #include "GlobalNamespace/OVRInput.hpp"
 #include "GlobalNamespace/OVRInput_Button.hpp"
+#include "gorilla-utils/shared/GorillaUtils.hpp"
+#include "gorilla-utils/shared/CustomProperties/Player.hpp"
+#include "gorilla-utils/shared/Utils/Player.hpp"
+#include "gorilla-utils/shared/Callbacks/InRoomCallbacks.hpp"
+#include "gorilla-utils/shared/Callbacks/MatchMakingCallbacks.hpp"
 #include "UnityEngine/Vector3.hpp"
 #include "UnityEngine/ForceMode.hpp"
 #include "UnityEngine/Transform.hpp"
@@ -30,6 +36,7 @@
 #include "custom-types/shared/register.hpp"
 #include "config.hpp"
 #include "HoverMonkeWatchView.hpp"
+#include "gorilla-utils/shared/Callbacks/MatchMakingCallbacks.hpp"
 
 ModInfo modInfo;
 
@@ -50,6 +57,7 @@ bool isRoom = false;
 bool fist = false;
 bool isFist = false;
 float thrust = 0;
+float carSpeed = 0;
 
 void powerCheck() {
     if(config.power == 0) {
@@ -68,45 +76,37 @@ void powerCheck() {
         thrust = 1.4;
     }
 }
-
-MAKE_HOOK_OFFSETLESS(PhotonNetworkController_OnJoinedRoom, void, Il2CppObject* self) {
-    INFO("Checking if private BUZZ");
-    
-    PhotonNetworkController_OnJoinedRoom(self);
-
-    Il2CppObject* currentRoom = CRASH_UNLESS(il2cpp_utils::RunMethod("Photon.Pun", "PhotonNetwork", "get_CurrentRoom"));
-
-    if (currentRoom)
-    {
-        isRoom = !CRASH_UNLESS(il2cpp_utils::RunMethod<bool>(currentRoom, "get_IsVisible"));
+void carSpeedCheck() {
+    if(config.carSpeed == 0) {
+        carSpeed = 1.2;
     }
-    else isRoom = true;
-
+    if(config.carSpeed == 1) {
+        carSpeed = 1.4;
+    }
+    if(config.carSpeed == 2) {
+        carSpeed = 1.6;
+    }
+    if(config.carSpeed == 3) {
+        carSpeed = 1.8;
+    }
+    if(config.carSpeed == 4) {
+        carSpeed = 2.3;
+    }
 }
 
 bool LStick = false;
-
-void updateButton() {
-    bool leftThumbstick = false;
-    leftThumbstick = GlobalNamespace::OVRInput::Get(GlobalNamespace::OVRInput::Button::PrimaryThumbstick, GlobalNamespace::OVRInput::Controller::LTouch);
-
-    if(leftThumbstick) {
-        LStick = true;
-    } else {
-        LStick = false;
-    }
-}
 
 #include "GlobalNamespace/GorillaTagManager.hpp"
 #include "GlobalNamespace/OVRInput_Axis2D.hpp"
 #include "GlobalNamespace/OVRInput_RawAxis2D.hpp"
 
-MAKE_HOOK_OFFSETLESS(GorillaTagManager_Update, void, GlobalNamespace::GorillaTagManager* self) {
+MAKE_HOOK_MATCH(GorillaTagManager_Update, &GlobalNamespace::GorillaTagManager::Update, void, GlobalNamespace::GorillaTagManager* self) {
 
     using namespace GlobalNamespace;
     using namespace GorillaLocomotion;
     GorillaTagManager_Update(self);
-    INFO("Running GTManager hook BUZZ");
+    powerCheck();
+    carSpeedCheck();
 
     Player* playerInstance = Player::get_Instance();
     if(playerInstance == nullptr) return;
@@ -123,6 +123,14 @@ MAKE_HOOK_OFFSETLESS(GorillaTagManager_Update, void, GlobalNamespace::GorillaTag
 
     Transform* mainCamera = turnParent->GetChild(0);
 
+    Vector2 inputDir = OVRInput::Get(OVRInput::RawAxis2D::_get_LThumbstick(), OVRInput::Controller::LTouch);
+       
+    Vector3 velocityForward = mainCamera->get_forward() * (inputDir.y / 10);
+    Vector3 velocitySideways = mainCamera->get_right() * (inputDir.x / 10);
+
+    Vector3 newVelocityDirHover = (velocityForward + velocitySideways) * thrust;
+    Vector3 newVelocityDirCar = (velocityForward + velocitySideways) * carSpeed;
+
     if(isRoom && config.enabled) {
 
         if(LStick) {
@@ -135,14 +143,12 @@ MAKE_HOOK_OFFSETLESS(GorillaTagManager_Update, void, GlobalNamespace::GorillaTag
 
         UnityEngine::Transform* transform = playerGameObject->get_transform();
 
-        float distance = 2.3f;
-
-        Vector3 targetLocation;
+        float distance = 100.0f;
 
         int layermask = 0b1 << 9;
 
-        if(Physics::Raycast(transform->get_position() + Vector3::get_down().get_normalized() * 0.1f, Vector3::get_down(), hit, distance, layermask)) {
-            Vector3 targetLocation = hit.get_point();
+        if(Physics::Raycast(transform->get_position() + Vector3::get_down().get_normalized() * 0.1f, Vector3::get_down(), hit, distance, layermask) && !config.carMode) {
+            float distance = 2.3f;
 
             float rayDistance = hit.get_distance();
                 
@@ -150,37 +156,41 @@ MAKE_HOOK_OFFSETLESS(GorillaTagManager_Update, void, GlobalNamespace::GorillaTag
                 playerPhysics->AddForce(Vector3::get_up() * 500);
             }
             if(rayDistance > distance) {
-                playerPhysics->AddForce(Vector3::get_down() * 2000);
+                playerPhysics->AddForce(Vector3::get_down() * 500);
             }
-            if(rayDistance >= 7.5f) {
-                playerPhysics->AddForce(Vector3::get_down() * 10000);
-            }
+            playerPhysics->set_velocity(playerPhysics->get_velocity() + newVelocityDirHover);
         }
 
-        powerCheck();
+        if(config.carMode) {
+            distance = 0.75f;
 
-        Vector2 inputDir = OVRInput::Get(OVRInput::RawAxis2D::_get_LThumbstick(), OVRInput::Controller::LTouch);
+            RaycastHit ray;
 
-        INFO("BUZZ inputDir x: " + std::to_string(inputDir.x));
-        INFO("BUZZ inputDir y: " + std::to_string(inputDir.y));
-       
-        Vector3 velocityForward = mainCamera->get_forward() * (inputDir.y / 10);
-        Vector3 velocitySideways = mainCamera->get_right() * (inputDir.x / 10);
+            auto down = Physics::Raycast(playerPhysics->get_transform()->get_position(), Vector3::get_down(), ray, 100.0f, layermask);
 
-        Vector3 newVelocityDir = (velocityForward + velocitySideways) * thrust;
+            Vector3 car_direction = Vector3::ProjectOnPlane(mainCamera->get_forward(), ray.get_normal());
 
-        playerPhysics->set_velocity(playerPhysics->get_velocity() + newVelocityDir);
+            if(ray.get_distance() >= 1.8f) {
+                playerPhysics->AddForce(Vector3::get_down() * 1500);
+            }
 
-        INFO("In private room BUZZ");
+            playerPhysics->set_velocity(playerPhysics->get_velocity() + newVelocityDirCar);
+        }
     }
 }
 
-MAKE_HOOK_OFFSETLESS(Player_Update, void, Il2CppObject* self)
-{
-    using namespace UnityEngine;
-    using namespace GlobalNamespace;
-    INFO("player update was called");
-    Player_Update(self);
+MAKE_HOOK_MATCH(Player_Awake, &GorillaLocomotion::Player::Awake, void, GorillaLocomotion::Player* self) {
+    Player_Awake(self);
+
+    GorillaUtils::MatchMakingCallbacks::onJoinedRoomEvent() += {[&]() {
+        Il2CppObject* currentRoom = CRASH_UNLESS(il2cpp_utils::RunMethod("Photon.Pun", "PhotonNetwork", "get_CurrentRoom"));
+
+        if (currentRoom)
+        {
+            isRoom = !CRASH_UNLESS(il2cpp_utils::RunMethod<bool>(currentRoom, "get_IsVisible"));
+        } else isRoom = true;
+    }
+    };
 }
 
 extern "C" void setup(ModInfo& info)
@@ -193,17 +203,14 @@ extern "C" void setup(ModInfo& info)
 
 extern "C" void load()
 {
-    getLogger().info("Loading Phrog monke BUZZ...");
-
     GorillaUI::Init();
 
-    INSTALL_HOOK_OFFSETLESS(getLogger(), PhotonNetworkController_OnJoinedRoom, il2cpp_utils::FindMethodUnsafe("", "PhotonNetworkController", "OnJoinedRoom", 0));
-	INSTALL_HOOK_OFFSETLESS(getLogger(), Player_Update, il2cpp_utils::FindMethodUnsafe("GorillaLocomotion", "Player", "Update", 0));
-    INSTALL_HOOK_OFFSETLESS(getLogger(), GorillaTagManager_Update, il2cpp_utils::FindMethodUnsafe("", "GorillaTagManager", "Update", 0));
+    INSTALL_HOOK(getLogger(), Player_Awake);
+    INSTALL_HOOK(getLogger(), GorillaTagManager_Update);
 
-    custom_types::Register::RegisterType<HoverMonke::HoverMonkeWatchView>(); 
+    custom_types::Register::AutoRegister();
+
     GorillaUI::Register::RegisterWatchView<HoverMonke::HoverMonkeWatchView*>("<b><i><color=#FF0000>Ho</color><color=#FF8700>v</color><color=#FFFB00>er</color><color=#0FFF00>M</color><color=#0036FF>on</color><color=#B600FF>k</color><color=#FF00B6>e</color></i></b>", VERSION);
 
     LoadConfig();
-    getLogger().info("Phrog monke loaded BUZZ!");
 }
